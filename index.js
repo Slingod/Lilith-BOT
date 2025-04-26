@@ -25,15 +25,18 @@ const client = new Client({
 
 const db = new sqlite.Database('./data/database.sqlite', err => {
   if (err) logger.error(err);
-  else db.run(`CREATE TABLE IF NOT EXISTS users (
-    id TEXT PRIMARY KEY,
-    points INTEGER DEFAULT 0,
-    msgCount INTEGER DEFAULT 0,
-    lastVoice INTEGER DEFAULT 0
-  )`);
+  else {
+    db.run(`CREATE TABLE IF NOT EXISTS users (
+      id TEXT PRIMARY KEY,
+      points INTEGER DEFAULT 0,
+      msgCount INTEGER DEFAULT 0,
+      lastVoice INTEGER DEFAULT 0
+    )`);
+    // *** Nettoyage des nulls hérités ***
+    db.run(`UPDATE users SET points = 0 WHERE points IS NULL`);
+  }
 });
 
-// Charge les commandes
 client.commands = new Collection();
 for (const f of require('fs').readdirSync('./commands')) {
   const cmd = require(`./commands/${f}`);
@@ -45,32 +48,32 @@ const cooldown = new Map();
 client.once(Events.ClientReady, () => {
   logger.info(`Connecté comme ${client.user.tag}`);
 
-  // POINTS VOCAUX : on n'itère plus tous les membres, seulement les voiceStates
   setInterval(() => {
     const now = Date.now();
     const guild = client.guilds.cache.get(config.guildId);
     if (!guild) return;
 
-    // Pour chaque personne actuellement en vocal
     guild.voiceStates.cache.forEach(state => {
-      const m = state.member;   // Member déjà en cache
+      const m = state.member;
       if (m && !m.user.bot && state.channel) {
-        // S'assurer qu'il existe en base
         db.run(`INSERT OR IGNORE INTO users(id) VALUES(?)`, [m.id]);
-
-        // Lire son dernier passage vocal
-        db.get(`SELECT lastVoice FROM users WHERE id = ?`, [m.id], (err, row) => {
+        db.get(`SELECT lastVoice, points FROM users WHERE id = ?`, [m.id], (err, row) => {
           if (err) return logger.error(err);
+
           const last = row?.lastVoice || 0;
-          if (now - last >= 10 * 60 * 1000) { // 10 minutes
+          // fallback si config.pointsPer10Min n'existe pas
+          const gain = Number.isInteger(config.pointsPer10Min)
+            ? config.pointsPer10Min
+            : (config.pointsPerMessageBatch || 10);
+
+          if (now - last >= 10 * 60 * 1000) {
             db.run(
               `UPDATE users SET points = points + ?, lastVoice = ? WHERE id = ?`,
-              [config.pointsPer10Min, now, m.id],
+              [gain, now, m.id],
               err2 => {
                 if (err2) return logger.error(err2);
-                // On notifie la personne en DM
-                m.send(`🎤 Bravo ${m.user.username}, +${config.pointsPer10Min} points pour ton activité vocale !`)
-                 .catch(() => {});
+                m.send(`🎤 Bravo ${m.user.username}, +${gain} points pour ton activité vocale !`)
+                  .catch(() => {});
               }
             );
           }
