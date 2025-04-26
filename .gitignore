@@ -1,0 +1,24 @@
+# Ne pas versionner les modules installés
+node_modules/
+
+# Ne pas versionner les fichiers d'environnement (sécurisé)
+.env
+
+# Ne pas versionner la base de données locale
+data/
+
+# Dossier de logs (si tu fais des logs)
+logs/
+
+# Système spécifique à Windows / Mac
+.DS_Store
+Thumbs.db
+
+# NPM debug files
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# VSCode settings
+.vscode/
