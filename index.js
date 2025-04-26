@@ -1,11 +1,10 @@
 // index.js
-require('dotenv').config();            // ← charger .env en tout premier
+require('dotenv').config();
 const { Client, GatewayIntentBits, Collection, Events } = require('discord.js');
 const sqlite = require('sqlite3').verbose();
 const configFile = require('./config.json');
 const logger = require('./logger');
 
-// On merge config.json + .env
 const config = {
   ...configFile,
   token:             process.env.TOKEN,
@@ -15,7 +14,6 @@ const config = {
   vipRoleId:         process.env.VIP_ROLE_ID
 };
 
-// Client Discord
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -25,7 +23,6 @@ const client = new Client({
   ]
 });
 
-// Base SQLite
 const db = new sqlite.Database('./data/database.sqlite', err => {
   if (err) logger.error(err);
   else db.run(`CREATE TABLE IF NOT EXISTS users (
@@ -36,56 +33,63 @@ const db = new sqlite.Database('./data/database.sqlite', err => {
   )`);
 });
 
-// Collections de commandes
+// Charge les commandes
 client.commands = new Collection();
 for (const f of require('fs').readdirSync('./commands')) {
   const cmd = require(`./commands/${f}`);
   if (cmd.data) client.commands.set(cmd.data.name, cmd);
 }
 
-// Cooldowns & Antispam
 const cooldown = new Map();
 
-// Ready
 client.once(Events.ClientReady, () => {
   logger.info(`Connecté comme ${client.user.tag}`);
 
-  // Intervalles pour points vocal
+  // POINTS VOCAUX : on n'itère plus tous les membres, seulement les voiceStates
   setInterval(() => {
     const now = Date.now();
-    db.all(`SELECT * FROM users`, [], (e, rows) => {
-      if (e) return logger.error(e);
-      rows.forEach(u => {
-        client.guilds.cache.get(config.guildId)
-          .members.fetch(u.id)
-          .then(m => {
-            if (m.voice.channel && now - u.lastVoice >= 5 * 60 * 1000) {
-              db.run(
-                `UPDATE users SET points = points + ?, lastVoice = ? WHERE id = ?`,
-                [config.pointsPer5Min, now, u.id]
-              );
-            }
-          })
-          .catch(() => {}); // ignore si membre introuvable
-      });
+    const guild = client.guilds.cache.get(config.guildId);
+    if (!guild) return;
+
+    // Pour chaque personne actuellement en vocal
+    guild.voiceStates.cache.forEach(state => {
+      const m = state.member;   // Member déjà en cache
+      if (m && !m.user.bot && state.channel) {
+        // S'assurer qu'il existe en base
+        db.run(`INSERT OR IGNORE INTO users(id) VALUES(?)`, [m.id]);
+
+        // Lire son dernier passage vocal
+        db.get(`SELECT lastVoice FROM users WHERE id = ?`, [m.id], (err, row) => {
+          if (err) return logger.error(err);
+          const last = row?.lastVoice || 0;
+          if (now - last >= 10 * 60 * 1000) { // 10 minutes
+            db.run(
+              `UPDATE users SET points = points + ?, lastVoice = ? WHERE id = ?`,
+              [config.pointsPer10Min, now, m.id],
+              err2 => {
+                if (err2) return logger.error(err2);
+                // On notifie la personne en DM
+                m.send(`🎤 Bravo ${m.user.username}, +${config.pointsPer10Min} points pour ton activité vocale !`)
+                 .catch(() => {});
+              }
+            );
+          }
+        });
+      }
     });
   }, 60 * 1000);
 });
 
-// MessageCreate
 client.on(Events.MessageCreate, async msg => {
   if (msg.author.bot) return;
 
-  // Antispam / cooldown
   const now = Date.now();
   const cd = cooldown.get(msg.author.id) || 0;
   if (now < cd) return;
   cooldown.set(msg.author.id, now + config.cooldownSeconds * 1000);
 
-  // Assure l’existence en base
   db.run(`INSERT OR IGNORE INTO users(id) VALUES(?)`, [msg.author.id]);
 
-  // Comptage messages
   db.get(`SELECT msgCount FROM users WHERE id = ?`, [msg.author.id], (e, row) => {
     const count = (row?.msgCount || 0) + 1;
     if (count >= config.messagesPerReward) {
@@ -93,7 +97,6 @@ client.on(Events.MessageCreate, async msg => {
         `UPDATE users SET points = points + ?, msgCount = 0 WHERE id = ?`,
         [config.pointsPerMessageBatch, msg.author.id]
       );
-      // On envoie en DM pour éviter de flood les salons
       msg.author
         .send(`🎉 ${msg.author.username}, tu as gagné +${config.pointsPerMessageBatch} points !`)
         .catch(() => null);
@@ -103,14 +106,12 @@ client.on(Events.MessageCreate, async msg => {
     }
   });
 
-  // Commandes préfixées
   if (!msg.content.startsWith(config.prefix)) return;
   const [cmdName, ...args] = msg.content.slice(config.prefix.length).split(/ +/);
   const cmd = client.commands.get(cmdName);
   if (cmd && !cmd.data) cmd.execute(msg, db, config, client);
 });
 
-// Interactions (slash, buttons, select)
 client.on(Events.InteractionCreate, inter => {
   if (inter.isChatInputCommand()) {
     const cmd = client.commands.get(inter.commandName);
@@ -120,10 +121,9 @@ client.on(Events.InteractionCreate, inter => {
   }
 });
 
-// Attribution VIP
 async function checkVIP(member) {
   db.get(`SELECT points FROM users WHERE id = ?`, [member.id], (e, row) => {
-    if (row.points >= config.vipThreshold && !member.roles.cache.has(config.vipRoleId)) {
+    if (row && row.points >= config.vipThreshold && !member.roles.cache.has(config.vipRoleId)) {
       member.roles.add(config.vipRoleId)
         .then(() => logger.info(`VIP ajouté à ${member.user.tag}`))
         .catch(err => logger.error(err));

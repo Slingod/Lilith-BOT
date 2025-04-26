@@ -1,8 +1,10 @@
 {
   "prefix": "!",
-  "pointsPer5Min": 10,
-  "messagesPerReward": 50,
-  "pointsPerMessageBatch": 10,
   "cooldownSeconds": 5,
-  "vipThreshold": 1000000
+  "messagesPerReward": 20,
+  "pointsPerMessageBatch": 10,
+  "pointsPer10Min": 10,
+  "vipThreshold": 1000,
+  "purchaseChannelId": "ID_DU_CHANNEL",
+  "vipRoleId": "ID_DU_ROLE_VIP"
 }
