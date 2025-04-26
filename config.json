@@ -1,0 +1,8 @@
+{
+  "prefix": "!",
+  "pointsPer5Min": 10,
+  "messagesPerReward": 50,
+  "pointsPerMessageBatch": 10,
+  "cooldownSeconds": 5,
+  "vipThreshold": 1000000
+}

@@ -1,0 +1,21 @@
+{
+  "name": "lilith-bot",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "deploy": "node deploy-commands.js",
+    "start": "node index.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "@discordjs/rest": "^2.5.0",
+    "discord-api-types": "^0.38.1",
+    "discord.js": "^14.19.1",
+    "dotenv": "^16.5.0",
+    "sqlite3": "^5.1.7",
+    "winston": "^3.17.0"
+  }
+}
